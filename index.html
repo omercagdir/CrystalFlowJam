@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#080b14">
+<title>Crystal Jam</title>
+<style>
+  :root{
+    --void:#080b14; --deep:#0e1424; --plate:#151d33; --ridge:#1f2a45;
+    --mist:#8b9ac4; --frost:#e6ecff; --amber:#ffb648;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--void);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:var(--frost);-webkit-user-select:none;user-select:none;touch-action:none}
+  #app{position:fixed;inset:0;height:100vh;height:100dvh;
+    display:flex;flex-direction:column;align-items:center;overflow:hidden}
+
+  header{width:100%;max-width:560px;flex:0 0 auto;
+    padding:calc(10px + env(safe-area-inset-top)) 18px 6px}
+  .topline{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .lvl{font-size:15px;font-weight:650;letter-spacing:.02em}
+  .lvl b{color:var(--amber);font-weight:650}
+  .clock{font-size:15px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--mist)}
+  .clock.low{color:#ff5c6e}
+  .teach{margin-top:5px;font-size:13px;line-height:1.35;color:var(--mist);min-height:18px}
+  .bar{margin-top:9px;height:3px;border-radius:2px;background:var(--ridge);overflow:hidden}
+  .bar i{display:block;height:100%;width:100%;background:var(--amber);
+    transform-origin:left;transition:transform .25s linear}
+  .bar i.low{background:#ff5c6e}
+
+  #stage{flex:1 1 auto;min-height:0;width:100%;
+    display:flex;align-items:center;justify-content:center;
+    padding:4px 10px calc(10px + env(safe-area-inset-bottom))}
+  canvas{display:block;touch-action:none}
+
+  #veil{position:fixed;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;padding:32px;text-align:center;
+    background:rgba(8,11,20,.9);backdrop-filter:blur(6px);z-index:10}
+  #veil.on{display:flex}
+  #veil h1{font-size:27px;font-weight:700;letter-spacing:-.01em}
+  #veil p{font-size:14px;color:var(--mist);max-width:30ch;line-height:1.5}
+  #veil .go{margin-top:14px;font-size:13px;color:var(--amber);font-weight:600}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="topline">
+      <div class="lvl">Level <b id="ln">1</b> <span style="color:var(--ridge)">/</span> <span style="color:var(--mist)">10</span></div>
+      <div class="clock" id="clock">0:00</div>
+    </div>
+    <div class="teach" id="teach"></div>
+    <div class="bar"><i id="barfill"></i></div>
+  </header>
+  <div id="stage"><canvas id="cv"></canvas></div>
+</div>
+<div id="veil"><h1 id="vt"></h1><p id="vp"></p><div class="go" id="vg"></div></div>
+<script>
+
+LEVELS = [{"w":5,"h":5,"time":90,"teach":"Drag from a crystal to its twin.","crystals":[{"x":0,"y":0,"c":0},{"x":2,"y":2,"c":0},{"x":4,"y":0,"c":1},{"x":4,"y":4,"c":1},{"x":0,"y":2,"c":2},{"x":2,"y":4,"c":2}],"orbs":[],"covers":[],"walls":[],"barriers":[],"bridges":[],"chests":[],"blocks":[]},{"w":5,"h":6,"time":120,"teach":"Covered tiles open after enough connections.","covers":[{"x":2,"y":0,"n":2}],"crystals":[{"x":0,"y":0,"c":0},{"x":4,"y":0,"c":0},{"x":0,"y":2,"c":1},{"x":2,"y":2,"c":1},{"x":4,"y":2,"c":2},{"x":2,"y":3,"c":2},{"x":0,"y":5,"c":3},{"x":4,"y":4,"c":3}],"orbs":[],"walls":[],"barriers":[],"bridges":[],"chests":[],"blocks":[]},{"w":6,"h":6,"time":120,"teach":"Caged crystals can only be reached, never drawn from.","crystals":[{"x":0,"y":0,"c":0,"caged":true},{"x":0,"y":3,"c":0},{"x":5,"y":0,"c":1},{"x":3,"y":2,"c":1},{"x":5,"y":2,"c":2,"caged":true},{"x":5,"y":4,"c":2},{"x":0,"y":5,"c":3},{"x":3,"y":5,"c":3}],"orbs":[],"covers":[],"walls":[],"barriers":[],"bridges":[],"chests":[],"blocks":[]},{"w":6,"h":7,"time":150,"teach":"Collect every orb of your colour before you land.","orbs":[{"x":2,"y":1,"c":0},{"x":2,"y":4,"c":1},{"x":3,"y":4,"c":1}],"crystals":[{"x":0,"y":0,"c":0},{"x":5,"y":0,"c":0},{"x":0,"y":3,"c":1},{"x":5,"y":3,"c":1},{"x":0,"y":2,"c":2},{"x":5,"y":2,"c":2},{"x":0,"y":6,"c":3},{"x":5,"y":6,"c":3}],"covers":[],"walls":[],"barriers":[],"bridges":[],"chests":[],"blocks":[]},{"w":7,"h":8,"time":180,"teach":"Bridges let two lines cross. Some colours have more than two crystals.","bridges":[{"x":3,"y":3}],"crystals":[{"x":0,"y":3,"c":0},{"x":6,"y":3,"c":0},{"x":3,"y":0,"c":1},{"x":3,"y":6,"c":1},{"x":0,"y":0,"c":2},{"x":2,"y":0,"c":2},{"x":4,"y":0,"c":2},{"x":6,"y":0,"c":2},{"x":0,"y":7,"c":3},{"x":6,"y":7,"c":3},{"x":0,"y":5,"c":4},{"x":2,"y":5,"c":4}],"orbs":[],"covers":[],"walls":[],"barriers":[],"chests":[],"blocks":[]},{"w":7,"h":9,"time":180,"teach":"Coil crystals blast the nearest wall when they light up.","walls":[{"a":[6,8],"b":[5,8]},{"a":[6,8],"b":[6,7]}],"crystals":[{"x":0,"y":0,"c":2,"coil":true},{"x":6,"y":0,"c":2},{"x":0,"y":2,"c":3,"coil":true},{"x":6,"y":2,"c":3},{"x":0,"y":4,"c":1},{"x":6,"y":4,"c":1},{"x":0,"y":6,"c":4},{"x":6,"y":6,"c":4},{"x":0,"y":8,"c":0},{"x":6,"y":8,"c":0}],"orbs":[],"covers":[],"barriers":[],"bridges":[],"chests":[],"blocks":[]},{"w":8,"h":10,"time":210,"teach":"Keys open chests. Barriers only yield to their own colour.","chests":[{"x":5,"y":7,"w":2,"h":2,"c":0}],"barriers":[{"a":[3,4],"b":[4,4],"c":1},{"a":[3,5],"b":[4,5],"c":1},{"a":[3,6],"b":[4,6],"c":1}],"crystals":[{"x":0,"y":0,"c":0,"key":0},{"x":7,"y":0,"c":0},{"x":0,"y":2,"c":2},{"x":7,"y":2,"c":2},{"x":0,"y":5,"c":1},{"x":7,"y":5,"c":1},{"x":0,"y":7,"c":3},{"x":3,"y":7,"c":3},{"x":0,"y":9,"c":4},{"x":5,"y":7,"c":4},{"x":7,"y":9,"c":5},{"x":7,"y":7,"c":5}],"orbs":[],"covers":[],"walls":[],"bridges":[],"blocks":[]},{"w":9,"h":11,"time":240,"teach":"Some crystals are boxed in. Drag the crates out of the way.","blocks":[{"x":1,"y":0,"cells":[[0,0]]},{"x":0,"y":1,"cells":[[0,0]]},{"x":7,"y":10,"cells":[[0,0]]},{"x":8,"y":9,"cells":[[0,0]]},{"x":3,"y":6,"cells":[[0,0],[1,0],[0,1],[1,1]]},{"x":2,"y":9,"cells":[[0,0],[1,0],[2,0]]}],"crystals":[{"x":4,"y":5,"wild":true},{"x":0,"y":5,"c":0},{"x":8,"y":5,"c":0},{"x":4,"y":4,"c":0},{"x":0,"y":0,"c":1},{"x":8,"y":0,"c":1},{"x":0,"y":2,"c":2},{"x":8,"y":2,"c":2},{"x":0,"y":3,"c":5},{"x":8,"y":3,"c":5},{"x":0,"y":8,"c":4},{"x":8,"y":8,"c":4},{"x":0,"y":10,"c":3},{"x":8,"y":10,"c":3}],"orbs":[],"covers":[],"walls":[],"barriers":[],"bridges":[],"chests":[]},{"w":10,"h":12,"time":260,"teach":"Unstable crystals detonate. Light them first.","bridges":[{"x":4,"y":5},{"x":4,"y":6}],"covers":[{"x":2,"y":3,"n":2},{"x":7,"y":3,"n":3}],"crystals":[{"x":0,"y":0,"c":0,"unstable":45},{"x":9,"y":0,"c":0},{"x":0,"y":6,"c":1},{"x":9,"y":6,"c":1},{"x":4,"y":4,"c":2},{"x":4,"y":8,"c":2},{"x":0,"y":1,"c":3},{"x":9,"y":1,"c":3},{"x":0,"y":3,"c":4},{"x":9,"y":3,"c":4},{"x":0,"y":11,"c":5},{"x":9,"y":11,"c":5},{"x":0,"y":9,"c":6},{"x":9,"y":9,"c":6},{"x":2,"y":5,"c":7},{"x":7,"y":5,"c":7}],"orbs":[],"walls":[],"barriers":[],"chests":[],"blocks":[]},{"w":10,"h":12,"time":320,"teach":"Everything at once.","bridges":[{"x":4,"y":8}],"covers":[{"x":5,"y":1,"n":3}],"walls":[{"a":[9,11],"b":[8,11]},{"a":[9,11],"b":[9,10]}],"barriers":[{"a":[4,4],"b":[5,4],"c":2},{"a":[4,5],"b":[5,5],"c":2}],"chests":[{"x":6,"y":8,"w":2,"h":2,"c":3}],"orbs":[{"x":3,"y":1,"c":1},{"x":6,"y":1,"c":1}],"blocks":[{"x":2,"y":9,"cells":[[0,0],[1,0],[2,0]]}],"crystals":[{"x":0,"y":0,"c":0,"coil":true},{"x":9,"y":0,"c":0},{"x":0,"y":1,"c":1},{"x":9,"y":1,"c":1},{"x":0,"y":3,"c":4},{"x":4,"y":3,"c":4},{"x":9,"y":3,"c":4},{"x":0,"y":4,"c":2},{"x":9,"y":4,"c":2},{"x":4,"y":5,"wild":true},{"x":2,"y":5,"c":9},{"x":0,"y":6,"c":3,"key":0},{"x":9,"y":6,"c":3},{"x":4,"y":7,"c":7,"caged":true},{"x":4,"y":10,"c":7},{"x":0,"y":8,"c":8},{"x":6,"y":8,"c":8},{"x":0,"y":10,"c":6,"coil":true},{"x":2,"y":10,"c":6},{"x":6,"y":10,"c":10},{"x":9,"y":10,"c":10},{"x":0,"y":11,"c":5},{"x":9,"y":11,"c":5}]}];
+
+/* 12 crystal colours, spread around the wheel for maximum separation.
+   None of them is white - white is reserved for the wild crystal. */
+const PAL = ["#ff3b47","#ff8a1f","#ffd028","#a8e63a","#23c552","#12d6c0",
+             "#35a7ff","#4258ff","#9d4edd","#e83fd0","#ff7ab8","#b9743f"];
+const DORMANT = "#39456b";
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const elLn = document.getElementById('ln'), elClock = document.getElementById('clock');
+const elTeach = document.getElementById('teach'), elBar = document.getElementById('barfill');
+const veil = document.getElementById('veil'), vt = document.getElementById('vt'),
+      vp = document.getElementById('vp'), vg = document.getElementById('vg');
+
+let S = null, li = 0, cs = 32, ox = 0, oy = 0, dpr = 1;
+let drag = null, phase = 'play', flash = [];
+
+/* ---------------------------------------------------------------- setup */
+function load(i){
+  const L = JSON.parse(JSON.stringify(LEVELS[i]));
+  S = {
+    w:L.w, h:L.h, time:L.time, left:L.time, teach:L.teach, started:false, elapsed:0,
+    crystals:L.crystals.map((c,idx)=>({...c, id:idx, on:false, coilUsed:false})),
+    orbs:L.orbs, covers:L.covers.map(c=>({...c,open:false})),
+    walls:L.walls.map(w=>({...w,dead:false})),
+    barriers:L.barriers.map(b=>({...b,dead:false})),
+    bridges:L.bridges, chests:L.chests.map(c=>({...c,open:false})),
+    blocks:L.blocks.map(b=>({...b})), paths:[]
+  };
+  phase='play'; drag=null; flash=[];
+  elLn.textContent = i+1;
+  elTeach.textContent = L.teach;
+  veil.classList.remove('on');
+  refresh(); fit();
+}
+
+/* ------------------------------------------------------------- lookups */
+const K = (x,y)=> y*S.w+x;
+const inB = (x,y)=> x>=0 && y>=0 && x<S.w && y<S.h;
+const crystalAt = (x,y)=> S.crystals.find(c=>c.x===x&&c.y===y);
+const orbAt     = (x,y)=> S.orbs.find(o=>o.x===x&&o.y===y);
+const coverAt   = (x,y)=> S.covers.find(c=>c.x===x&&c.y===y);
+const bridgeAt  = (x,y)=> S.bridges.some(b=>b.x===x&&b.y===y);
+const chestAt   = (x,y)=> S.chests.find(c=> x>=c.x && x<c.x+c.w && y>=c.y && y<c.y+c.h);
+function blockAt(x,y){
+  for(const b of S.blocks) for(const [dx,dy] of b.cells)
+    if(b.x+dx===x && b.y+dy===y) return b;
+  return null;
+}
+function edgeKey(a,b){
+  const p = (a[1]<b[1]||(a[1]===b[1]&&a[0]<b[0])) ? [a,b] : [b,a];
+  return p[0][0]+','+p[0][1]+'|'+p[1][0]+','+p[1][1];
+}
+const wallOn    = (a,b)=> S.walls.find(w=>!w.dead && edgeKey(w.a,w.b)===edgeKey(a,b));
+const barrierOn = (a,b)=> S.barriers.find(w=>!w.dead && edgeKey(w.a,w.b)===edgeKey(a,b));
+
+/* occupancy: cell -> [{p, i}] */
+let OCC = new Map();
+function reindex(){
+  OCC = new Map();
+  for(const p of S.paths) p.cells.forEach((c,i)=>{
+    const k = K(c[0],c[1]);
+    if(!OCC.has(k)) OCC.set(k,[]);
+    OCC.get(k).push({p,i});
+  });
+}
+const occAt = (x,y)=> OCC.get(K(x,y)) || [];
+
+/* ------------------------------------------------------------ mutation */
+function trimDeck(p){          // a tip may never sit on a bridge
+  while(p.cells.length){
+    const t = p.cells[p.cells.length-1];
+    if(!bridgeAt(t[0],t[1])) break;
+    p.cells.pop();
+  }
+}
+function truncate(p, i){
+  if(i < p.cells.length) p.cells.length = i;
+  p.complete = false;
+  trimDeck(p);
+  if(p.cells.length < 1) S.paths.splice(S.paths.indexOf(p),1);
+}
+
+function refresh(){
+  reindex();
+  for(const c of S.crystals) c.on = false;
+  let done = 0;
+  for(const p of S.paths){
+    if(!p.complete) continue;
+    done++;
+    const a = p.cells[0], b = p.cells[p.cells.length-1];
+    const ca = crystalAt(a[0],a[1]), cb = crystalAt(b[0],b[1]);
+    if(ca) ca.on = true;
+    if(cb) cb.on = true;
+  }
+  // covered tiles open permanently once the quota is ever met
+  for(const c of S.covers) if(done >= c.n) c.open = true;
+}
+
+function fireEffects(p){
+  const ends = [p.cells[0], p.cells[p.cells.length-1]]
+    .map(c=>crystalAt(c[0],c[1])).filter(Boolean);
+  for(const c of ends){
+    if(c.coil && !c.coilUsed){
+      const live = S.walls.filter(w=>!w.dead);
+      if(live.length){
+        let best = Infinity, pool = [];
+        for(const w of live){
+          const d = Math.min(
+            Math.abs(w.a[0]-c.x)+Math.abs(w.a[1]-c.y),
+            Math.abs(w.b[0]-c.x)+Math.abs(w.b[1]-c.y));
+          if(d < best){ best = d; pool = [w]; }
+          else if(d === best) pool.push(w);
+        }
+        const hit = pool[Math.floor(Math.random()*pool.length)];
+        hit.dead = true; c.coilUsed = true;
+        flash.push({x:(hit.a[0]+hit.b[0])/2, y:(hit.a[1]+hit.b[1])/2, t:1, col:'#ff8a3d'});
+      }
+    }
+    if(c.key !== undefined && S.chests[c.key]) S.chests[c.key].open = true;
+  }
+}
+
+/* --------------------------------------------------------- path drawing */
+function canEnter(p, from, to){
+  const [nx,ny] = to;
+  if(!inB(nx,ny)) return 'no';
+  if(Math.abs(nx-from[0])+Math.abs(ny-from[1]) !== 1) return 'no';
+  if(wallOn(from,to)) return 'no';
+  const bar = barrierOn(from,to);
+  if(bar && bar.c !== p.color) return 'no';
+  if(blockAt(nx,ny)) return 'no';
+  const ch = chestAt(nx,ny); if(ch && !ch.open) return 'no';
+  const cv2 = coverAt(nx,ny); if(cv2 && !cv2.open) return 'no';
+  const cr = crystalAt(nx,ny);
+  if(cr){
+    if(bridgeAt(nx,ny)) return 'no';
+    if(cr.wild) return 'end';
+    if(cr.c !== p.color) return 'no';
+    if(cr === p.startCrystal) return 'no';
+    return 'end';
+  }
+  return 'ok';
+}
+
+function step(p, nx, ny){
+  const tip = p.cells[p.cells.length-1];
+  const own = p.cells.findIndex(c=>c[0]===nx&&c[1]===ny);
+  if(own >= 0){                       // backtrack / self-cross
+    if(own === p.cells.length-1) return true;
+    p.cells.length = own+1; p.complete=false; trimDeck(p); refresh(); return true;
+  }
+  const verdict = canEnter(p, tip, [nx,ny]);
+  if(verdict === 'no') return false;
+
+  const dx = nx-tip[0], dy = ny-tip[1];
+  const others = occAt(nx,ny).filter(o=>o.p !== p);
+
+  if(bridgeAt(nx,ny)){
+    // must pass straight through; deck holds at most two perpendicular lines
+    const ex = nx+dx, ey = ny+dy;
+    if(!inB(ex,ey)) return false;
+    if(others.length){
+      if(others.length > 1) return false;
+      const o = others[0], oc = o.p.cells;
+      const pv = oc[o.i-1], nv = oc[o.i+1];
+      if(!pv || !nv) return false;
+      const odx = nv[0]-pv[0], ody = nv[1]-pv[1];
+      if((odx!==0) === (dx!==0)) return false;   // parallel -> refuse
+    }
+    p.cells.push([nx,ny]);
+    if(!step(p, ex, ey)){ p.cells.pop(); return false; }
+    return true;
+  }
+
+  if(verdict !== 'end') for(const o of others) truncate(o.p, o.i);
+
+  const bar = barrierOn(tip,[nx,ny]);
+  if(bar) bar.dead = true;
+
+  p.cells.push([nx,ny]);
+
+  if(verdict === 'end'){
+    const missed = S.orbs.some(o => o.c === p.color &&
+      !p.cells.some(c=>c[0]===o.x && c[1]===o.y));
+    if(missed){
+      for(const c of p.cells) flash.push({x:c[0],y:c[1],t:1,col:'#ff5c6e'});
+      S.paths.splice(S.paths.indexOf(p),1);
+      drag = null; refresh(); return true;
+    }
+    p.complete = true;
+    fireEffects(p);
+    drag = null;
+    refresh();
+    if(S.crystals.every(c=>c.on)) win();
+    return true;
+  }
+  refresh();
+  return true;
+}
+
+/* walk in a straight run so fast swipes don't drop cells */
+function driveTo(p, tx, ty){
+  for(let guard=0; guard<400; guard++){
+    if(!drag) return;
+    const tip = p.cells[p.cells.length-1];
+    if(tip[0]===tx && tip[1]===ty) return;
+    const dx = tx-tip[0], dy = ty-tip[1];
+    let sx=0, sy=0;
+    if(Math.abs(dx) >= Math.abs(dy)) sx = Math.sign(dx); else sy = Math.sign(dy);
+    if(!step(p, tip[0]+sx, tip[1]+sy)){
+      if(sx){ sy = Math.sign(dy); sx = 0; } else { sx = Math.sign(dx); sy = 0; }
+      if((!sx && !sy) || !step(p, tip[0]+sx, tip[1]+sy)) return;
+    }
+  }
+}
+
+/* --------------------------------------------------------- moving blocks */
+function blockFits(b, nx, ny){
+  for(const [dx,dy] of b.cells){
+    const x = nx+dx, y = ny+dy;
+    if(!inB(x,y)) return false;
+    if(crystalAt(x,y)) return false;
+    const ch = chestAt(x,y); if(ch && !ch.open) return false;
+    const cvr = coverAt(x,y); if(cvr && !cvr.open) return false;
+    const other = blockAt(x,y); if(other && other !== b) return false;
+  }
+  const sx = nx-b.x, sy = ny-b.y;
+  for(const [dx,dy] of b.cells){
+    const fx = b.x+dx, fy = b.y+dy;
+    if(wallOn([fx,fy],[fx+sx,fy+sy])) return false;
+  }
+  return true;
+}
+function slide(b, sx, sy){
+  if(!blockFits(b, b.x+sx, b.y+sy)) return false;
+  b.x += sx; b.y += sy;
+  for(const [dx,dy] of b.cells){
+    const x = b.x+dx, y = b.y+dy;
+    for(const o of occAt(x,y).slice()) truncate(o.p, o.i);
+  }
+  refresh();
+  return true;
+}
+
+/* ---------------------------------------------------------------- input */
+function toCell(ev){
+  const r = cv.getBoundingClientRect();
+  const px = (ev.clientX - r.left - ox) / cs;
+  const py = (ev.clientY - r.top  - oy) / cs;
+  return [Math.floor(px), Math.floor(py)];
+}
+
+function onDown(ev){
+  if(phase !== 'play'){ load(li); return; }
+  const [x,y] = toCell(ev);
+  if(!inB(x,y)) return;
+  S.started = true;
+
+  const b = blockAt(x,y);
+  if(b){ drag = {kind:'block', b, ax:x, ay:y, ox:b.x, oy:b.y}; return; }
+
+  const cr = crystalAt(x,y);
+  if(cr && !cr.wild && !cr.caged){
+    const old = S.paths.find(p=>p.cells[0][0]===x && p.cells[0][1]===y);
+    if(old) S.paths.splice(S.paths.indexOf(old),1);
+    const p = {color:cr.c, startCrystal:cr, cells:[[x,y]], complete:false};
+    S.paths.push(p); drag = {kind:'path', p, moved:false};
+    refresh(); return;
+  }
+
+  const here = occAt(x,y);
+  if(here.length){
+    const tipHit = here.find(o => o.i === o.p.cells.length-1 && !o.p.complete);
+    if(tipHit){ drag = {kind:'path', p:tipHit.p, moved:false}; return; }
+    drag = {kind:'tap', hits:here.slice(), moved:false};
+  }
+}
+
+function onMove(ev){
+  if(!drag) return;
+  if(drag.kind === 'block'){
+    const r = cv.getBoundingClientRect();
+    const px = (ev.clientX - r.left - ox) / cs, py = (ev.clientY - r.top - oy) / cs;
+    const dx = Math.round(px - (drag.ax + .5)), dy = Math.round(py - (drag.ay + .5));
+    const tx = drag.ox + dx, ty = drag.oy + dy;
+    if(Math.abs(tx-drag.b.x) >= Math.abs(ty-drag.b.y)){
+      while(drag.b.x !== tx && slide(drag.b, Math.sign(tx-drag.b.x), 0));
+    } else {
+      while(drag.b.y !== ty && slide(drag.b, 0, Math.sign(ty-drag.b.y)));
+    }
+    return;
+  }
+  const [x,y] = toCell(ev);
+  if(!inB(x,y)) return;
+  if(drag.kind === 'tap'){
+    const c = drag.hits[0].p.cells[drag.hits[0].i];
+    if(c[0]!==x || c[1]!==y) drag.moved = true;
+    return;
+  }
+  const tip = drag.p.cells[drag.p.cells.length-1];
+  if(tip[0]===x && tip[1]===y) return;
+  drag.moved = true;
+  driveTo(drag.p, x, y);
+}
+
+function onUp(){
+  if(!drag) return;
+  if(drag.kind === 'tap' && !drag.moved){
+    for(const o of drag.hits.slice()) truncate(o.p, o.i);
+    refresh();
+  }
+  if(drag.kind === 'path' && drag.p.cells.length === 1 && !drag.moved){
+    S.paths.splice(S.paths.indexOf(drag.p),1); refresh();
+  }
+  drag = null;
+}
+
+cv.addEventListener('pointerdown', e=>{ cv.setPointerCapture(e.pointerId); onDown(e); });
+cv.addEventListener('pointermove', onMove);
+cv.addEventListener('pointerup', onUp);
+cv.addEventListener('pointercancel', onUp);
+veil.addEventListener('pointerdown', ()=>{ if(phase==='fail') load(li); else if(phase==='done') load(li=0); });
+
+/* --------------------------------------------------------------- states */
+function win(){
+  phase = 'won';
+  setTimeout(()=>{
+    if(li >= LEVELS.length-1){
+      phase='done';
+      vt.textContent='Demo complete';
+      vp.textContent='All ten levels cleared. Every mechanic from the concept doc is in there.';
+      vg.textContent='Tap to play again'; veil.classList.add('on');
+    } else load(++li);
+  }, 620);
+}
+function fail(reason){
+  if(phase !== 'play') return;
+  phase = 'fail';
+  vt.textContent = reason === 'time' ? "Out of time" : "Crystal detonated";
+  vp.textContent = reason === 'time'
+    ? "The board reset. Plan the tight corners first."
+    : "An unstable crystal burned out before it was connected.";
+  vg.textContent = 'Tap to try again';
+  veil.classList.add('on');
+}
+
+/* ---------------------------------------------------------- colour utils */
+const _rgb = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+const _mixCache = new Map();
+function mix(a, b, t){
+  const k = a+b+t;
+  let v = _mixCache.get(k);
+  if(v) return v;
+  const A = _rgb(a), B = _rgb(b);
+  v = `rgb(${Math.round(A[0]+(B[0]-A[0])*t)},${Math.round(A[1]+(B[1]-A[1])*t)},${Math.round(A[2]+(B[2]-A[2])*t)})`;
+  _mixCache.set(k, v);
+  return v;
+}
+const lift = (c,t) => mix(c, '#ffffff', t);
+const sink = (c,t) => mix(c, '#0a0e1a', t);
+
+const STONE_DARK = '#5c667f', STONE_MID = '#8d97b0', STONE_LIT = '#c3cadb';
+
+/* ---------------------------------------------------------------- layout */
+let gradCache = new Map();
+let fitW = 0, fitH = 0;
+
+/* Mobile browsers report a layout viewport that runs under the URL bar, so
+   pin the app to the visual viewport before measuring the board area. */
+function sizeApp(){
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  if(h) document.getElementById('app').style.height = h + 'px';
+}
+
+function fit(){
+  sizeApp();
+  const stage = document.getElementById('stage');
+  const aw = stage.clientWidth - 4, ah = stage.clientHeight - 4;
+  fitW = stage.clientWidth; fitH = stage.clientHeight;
+  cs = Math.floor(Math.min(aw / S.w, ah / S.h));
+  const bw = cs*S.w, bh = cs*S.h;
+  dpr = Math.min(window.devicePixelRatio||1, 2.5);
+  cv.style.width = bw+'px'; cv.style.height = bh+'px';
+  cv.width = bw*dpr; cv.height = bh*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ox = 0; oy = 0; gradCache = new Map();
+}
+const refit = ()=>{ if(S) fit(); };
+window.addEventListener('resize', refit);
+window.addEventListener('orientationchange', refit);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', refit);
+
+const cx  = x => x*cs + cs/2;
+const cyf = y => y*cs + cs/2;
+
+function halo(x, y, r, col){
+  const key = col + '|' + Math.round(r);
+  let g = gradCache.get(key);
+  if(!g){
+    g = ctx.createRadialGradient(0,0,0, 0,0,r);
+    g.addColorStop(0,    mix(col,'#ffffff',.25));
+    g.addColorStop(0.35, col);
+    g.addColorStop(1,    'rgba(0,0,0,0)');
+    gradCache.set(key, g);
+  }
+  ctx.save(); ctx.translate(x,y);
+  ctx.globalAlpha = .42; ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0,0,r,0,7); ctx.fill();
+  ctx.restore();
+}
+function rrect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+/* deterministic jitter so motes never crawl between frames */
+const rnd = (a,b) => { const s = Math.sin(a*127.1 + b*311.7)*43758.5453; return s - Math.floor(s); };
+
+/* ---------------------------------------------------------------- render */
+function draw(){
+  const W = S.w*cs, H = S.h*cs;
+  ctx.clearRect(0,0,W,H);
+
+  ctx.fillStyle = '#0c1120';
+  rrect(0,0,W,H,cs*0.24); ctx.fill();
+
+  ctx.save();
+  rrect(0,0,W,H,cs*0.24); ctx.clip();
+  ctx.strokeStyle = '#1b2440'; ctx.lineWidth = 1.5;
+  for(let x=1;x<S.w;x++){ ctx.beginPath(); ctx.moveTo(x*cs,0); ctx.lineTo(x*cs,H); ctx.stroke(); }
+  for(let y=1;y<S.h;y++){ ctx.beginPath(); ctx.moveTo(0,y*cs); ctx.lineTo(W,y*cs); ctx.stroke(); }
+  ctx.restore();
+  ctx.strokeStyle = '#26314f'; ctx.lineWidth = 2;
+  rrect(1,1,W-2,H-2,cs*0.24); ctx.stroke();
+
+  drawChests();
+  drawCovers();
+  drawBridges();
+  drawPaths();
+  drawOrbs();
+  drawEdges();
+  for(const b of S.blocks) drawBlock(b);
+  for(const c of S.crystals) drawCrystal(c);
+
+  for(const f of flash){
+    ctx.globalAlpha = f.t * .65;
+    ctx.beginPath(); ctx.arc(cx(f.x), cyf(f.y), cs*(0.28 + (1-f.t)*0.85), 0, 7);
+    ctx.fillStyle = f.col; ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* -------------------------------------------------------------- crystals */
+function shardFaces(x, baseY, w, h, lean, dark, light, edge, lw){
+  const tx = x + lean, ty = baseY - h;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x + w*.5, baseY - h*.46);
+  ctx.lineTo(x + w*.32, baseY);
+  ctx.lineTo(x - w*.32, baseY);
+  ctx.lineTo(x - w*.5, baseY - h*.46);
+  ctx.closePath();
+  ctx.fillStyle = dark; ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x + w*.5, baseY - h*.46);
+  ctx.lineTo(x + w*.32, baseY);
+  ctx.lineTo(x + w*.02, baseY);
+  ctx.closePath();
+  ctx.fillStyle = light; ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x + w*.5, baseY - h*.46);
+  ctx.lineTo(x + w*.32, baseY);
+  ctx.lineTo(x - w*.32, baseY);
+  ctx.lineTo(x - w*.5, baseY - h*.46);
+  ctx.closePath();
+  ctx.strokeStyle = edge; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x + w*.02, baseY); ctx.stroke();
+}
+
+function badge(x, y, col, icon){
+  const bx = x + cs*0.31, by = y - cs*0.32, br = cs*0.155;
+  ctx.save();
+  ctx.globalAlpha = .45; ctx.fillStyle = '#05070f';
+  ctx.beginPath(); ctx.arc(bx, by+cs*0.02, br, 0, 7); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(bx, by, br, 0, 7); ctx.fill();
+  ctx.strokeStyle = lift(col,.55); ctx.lineWidth = Math.max(1, cs*0.022);
+  ctx.stroke();
+  icon({x:bx, y:by});
+  ctx.restore();
+}
+
+function drawCrystal(c){
+  const x = cx(c.x), y = cyf(c.y);
+  const col = c.wild ? '#e9eefb' : PAL[c.c];
+  const pw = cs*0.33, ph = cs*0.112;
+  const baseY = y + cs*0.27;
+  const lw = Math.max(1, cs*0.032);
+  ctx.save();
+
+  if(c.on) halo(x, y - cs*0.04, cs*0.80, col);
+
+  ctx.globalAlpha = .38; ctx.fillStyle = '#05070f';
+  ctx.beginPath(); ctx.ellipse(x, baseY + ph*0.75, pw*1.02, ph*0.85, 0, 0, 7); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  /* Coloured pedestal. This is what tells the player which crystals pair up
+     while the crystal body itself is still grey stone. */
+  ctx.fillStyle = c.on ? sink(col,.30) : sink(col,.42);
+  ctx.beginPath(); ctx.ellipse(x, baseY + ph*0.52, pw, ph, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = c.on ? lift(col,.18) : col;
+  ctx.beginPath(); ctx.ellipse(x, baseY - ph*0.18, pw, ph, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = lift(col,.55); ctx.lineWidth = Math.max(1, cs*0.022);
+  ctx.globalAlpha = c.on ? .9 : .55;
+  ctx.beginPath(); ctx.ellipse(x, baseY - ph*0.18, pw*0.97, ph*0.9, 0, 0, 7); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  const dark  = c.on ? sink(col,.38) : STONE_DARK;
+  const light = c.on ? lift(col,.18) : STONE_MID;
+  const edge  = c.on ? lift(col,.62) : STONE_LIT;
+
+  const top = baseY - ph*0.30;
+  shardFaces(x - cs*0.155, top, cs*0.17, cs*0.30, -cs*0.022, dark, light, edge, lw);
+  shardFaces(x + cs*0.150, top, cs*0.18, cs*0.36,  cs*0.024, dark, light, edge, lw);
+  shardFaces(x,            top, cs*0.24, cs*0.50,  0,        dark, light, edge, lw);
+
+  if(c.on){
+    ctx.fillStyle = lift(col,.65);
+    for(let i=0;i<3;i++){
+      const a = rnd(c.x+i, c.y)*6.283, r = cs*(0.34 + rnd(c.y, c.x+i)*0.2);
+      ctx.globalAlpha = .75;
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(a)*r, y + Math.sin(a)*r*0.8, Math.max(.9, cs*0.024), 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if(c.caged && !c.on){
+    ctx.strokeStyle = '#96a1c0'; ctx.lineWidth = Math.max(1.6, cs*0.05);
+    ctx.lineCap = 'round';
+    for(const t of [-0.19, 0, 0.19]){
+      ctx.beginPath(); ctx.moveTo(x+t*cs, y-cs*0.40); ctx.lineTo(x+t*cs, y+cs*0.36); ctx.stroke();
+    }
+    ctx.lineWidth = Math.max(1.4, cs*0.042);
+    for(const t of [-0.36, 0.32]){
+      ctx.beginPath(); ctx.moveTo(x-cs*0.30, y+t*cs); ctx.lineTo(x+cs*0.30, y+t*cs); ctx.stroke();
+    }
+  }
+  if(c.wild){
+    ctx.lineWidth = Math.max(1.7, cs*0.055);
+    for(let i=0;i<6;i++){
+      ctx.strokeStyle = PAL[i*2];
+      ctx.beginPath();
+      ctx.ellipse(x, baseY - ph*0.18, pw*0.99, ph*0.95, 0,
+                  i*Math.PI/3, (i+1)*Math.PI/3);
+      ctx.stroke();
+    }
+  }
+  if(c.coil && !c.coilUsed) badge(x, y, '#ffb648', bx => {
+    ctx.strokeStyle = '#3a2400'; ctx.lineWidth = Math.max(1.2, cs*0.035);
+    ctx.lineCap = 'round'; ctx.beginPath();
+    for(let a=0; a<=Math.PI*3; a+=0.25){
+      const rr = cs*0.012 + a*cs*0.017;
+      const px = bx.x + Math.cos(a-1.2)*rr, py = bx.y + Math.sin(a-1.2)*rr;
+      a ? ctx.lineTo(px,py) : ctx.moveTo(px,py);
+    }
+    ctx.stroke();
+  });
+  if(c.key !== undefined) badge(x, y, '#ffd75e', bx => {
+    ctx.strokeStyle = '#3a2400'; ctx.lineWidth = Math.max(1.3, cs*0.04);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(bx.x, bx.y - cs*0.035, cs*0.042, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx.x, bx.y + cs*0.005); ctx.lineTo(bx.x, bx.y + cs*0.075);
+    ctx.moveTo(bx.x, bx.y + cs*0.048); ctx.lineTo(bx.x + cs*0.042, bx.y + cs*0.048);
+    ctx.stroke();
+  });
+  if(c.unstable && !c.on){
+    const remain = Math.max(0, c.unstable - S.elapsed), frac = remain/c.unstable;
+    const hot = frac < .3 ? '#ff5c6e' : '#ffb648';
+    ctx.beginPath();
+    ctx.arc(x, y, cs*0.45, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac);
+    ctx.strokeStyle = hot; ctx.lineWidth = Math.max(2, cs*0.07); ctx.lineCap='round'; ctx.stroke();
+    ctx.fillStyle = '#0c1120';
+    ctx.beginPath(); ctx.arc(x + cs*0.30, y - cs*0.30, cs*0.15, 0, 7); ctx.fill();
+    ctx.fillStyle = hot;
+    ctx.font = `700 ${Math.round(cs*0.21)}px ui-sans-serif,system-ui,sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(Math.ceil(remain), x + cs*0.30, y - cs*0.29);
+  }
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------- energy line */
+function drawPaths(){
+  const deck = [];
+  for(const p of S.paths){
+    if(p.cells.length < 2){
+      const c = p.cells[0];
+      ctx.globalAlpha = .85; ctx.fillStyle = lift(PAL[p.color],.3);
+      ctx.beginPath(); ctx.arc(cx(c[0]), cyf(c[1]), cs*0.13, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    strokePath(p, p.cells);
+    p.cells.forEach((c,i)=>{
+      if(!bridgeAt(c[0],c[1])) return;
+      const a = p.cells[i-1], b = p.cells[i+1];
+      if(a && b && a[0] === b[0]) deck.push({p,i});
+    });
+  }
+  for(const {p,i} of deck){
+    const c = p.cells[i];
+    ctx.save();
+    rrect(c[0]*cs+2, c[1]*cs+2, cs-4, cs-4, cs*0.15);
+    ctx.fillStyle = '#131c33'; ctx.fill();
+    ctx.strokeStyle = '#39476f'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+    strokePath(p, p.cells.slice(Math.max(0,i-1), i+2));
+  }
+}
+
+function trace(cells){
+  ctx.beginPath();
+  cells.forEach((c,i)=> i ? ctx.lineTo(cx(c[0]),cyf(c[1])) : ctx.moveTo(cx(c[0]),cyf(c[1])));
+}
+
+function strokePath(p, cells){
+  const col = PAL[p.color];
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+  if(p.complete){
+    ctx.globalAlpha = .28; ctx.strokeStyle = col;
+    ctx.lineWidth = cs*0.56; trace(cells); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = sink(col,.30);
+    ctx.lineWidth = cs*0.36; trace(cells); ctx.stroke();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = cs*0.26; trace(cells); ctx.stroke();
+    ctx.strokeStyle = lift(col,.6); ctx.globalAlpha = .9;
+    ctx.lineWidth = cs*0.09; trace(cells); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = lift(col,.55);
+    for(let i=0;i<cells.length;i++){
+      const c = cells[i];
+      if(rnd(c[0], c[1]) > .55) continue;
+      const a = rnd(c[1], c[0])*6.283;
+      ctx.globalAlpha = .5 + rnd(c[0]+1,c[1])*0.35;
+      ctx.beginPath();
+      ctx.arc(cx(c[0]) + Math.cos(a)*cs*0.3, cyf(c[1]) + Math.sin(a)*cs*0.3,
+              Math.max(.8, cs*0.022), 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.globalAlpha = .13; ctx.strokeStyle = col;
+    ctx.lineWidth = cs*0.40; trace(cells); ctx.stroke();
+    ctx.globalAlpha = .5;  ctx.strokeStyle = sink(col,.15);
+    ctx.lineWidth = cs*0.22; trace(cells); ctx.stroke();
+    ctx.globalAlpha = .8;  ctx.strokeStyle = lift(col,.2);
+    ctx.lineWidth = cs*0.075; trace(cells); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------- board props */
+function drawChests(){
+  for(const ch of S.chests){
+    if(ch.open) continue;
+    const col = PAL[ch.c];
+    ctx.save();
+    rrect(ch.x*cs+3, ch.y*cs+3, ch.w*cs-6, ch.h*cs-6, cs*0.18);
+    ctx.fillStyle = '#141d34'; ctx.fill();
+    ctx.globalAlpha = .16; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, cs*0.06); ctx.stroke();
+    ctx.setLineDash([cs*0.1, cs*0.1]);
+    ctx.strokeStyle = lift(col,.4); ctx.lineWidth = Math.max(1, cs*0.02);
+    rrect(ch.x*cs+7, ch.y*cs+7, ch.w*cs-14, ch.h*cs-14, cs*0.14); ctx.stroke();
+    ctx.setLineDash([]);
+    const lx = ch.x*cs + ch.w*cs/2, ly = ch.y*cs + ch.h*cs/2, s = cs*0.22;
+    ctx.strokeStyle = lift(col,.25); ctx.lineWidth = Math.max(2, cs*0.075);
+    ctx.beginPath(); ctx.arc(lx, ly-s*0.4, s*0.46, Math.PI, 0); ctx.stroke();
+    rrect(lx-s*0.72, ly-s*0.12, s*1.44, s*1.12, s*0.24);
+    ctx.fillStyle = lift(col,.25); ctx.fill();
+    ctx.fillStyle = '#141d34';
+    ctx.beginPath(); ctx.arc(lx, ly+s*0.42, s*0.16, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawCovers(){
+  for(const c of S.covers){
+    if(c.open) continue;
+    ctx.save();
+    rrect(c.x*cs+3, c.y*cs+3, cs-6, cs-6, cs*0.16);
+    ctx.fillStyle = '#2a3554'; ctx.fill();
+    ctx.strokeStyle = '#4a5980'; ctx.lineWidth = Math.max(1.5, cs*0.05); ctx.stroke();
+    ctx.strokeStyle = '#1d2740'; ctx.lineWidth = Math.max(1, cs*0.028);
+    for(const t of [0.3, 0.7]){
+      ctx.beginPath(); ctx.moveTo(c.x*cs+cs*0.14, c.y*cs+cs*t);
+      ctx.lineTo(c.x*cs+cs*0.86, c.y*cs+cs*t); ctx.stroke();
+    }
+    ctx.fillStyle = '#aab5d2';
+    ctx.font = `700 ${Math.round(cs*0.38)}px ui-sans-serif,system-ui,sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(c.n, cx(c.x), cyf(c.y));
+    ctx.restore();
+  }
+}
+
+function drawBridges(){
+  for(const b of S.bridges){
+    const x = b.x*cs, y = b.y*cs;
+    ctx.save();
+    rrect(x+2, y+2, cs-4, cs-4, cs*0.15);
+    ctx.fillStyle = '#131c33'; ctx.fill();
+    ctx.strokeStyle = '#39476f'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x+cs*.15, y+cs*.04); ctx.lineTo(x+cs*.15, y+cs*.96);
+    ctx.moveTo(x+cs*.85, y+cs*.04); ctx.lineTo(x+cs*.85, y+cs*.96); ctx.stroke();
+    ctx.strokeStyle = '#2a3557'; ctx.lineWidth = Math.max(1.5, cs*0.05);
+    for(const t of [.26,.5,.74]){
+      ctx.beginPath(); ctx.moveTo(x+cs*.15, y+cs*t); ctx.lineTo(x+cs*.85, y+cs*t); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawOrbs(){
+  for(const o of S.orbs){
+    const lit = S.paths.some(p=>p.complete && p.color===o.c &&
+      p.cells.some(c=>c[0]===o.x && c[1]===o.y));
+    const col = PAL[o.c], x = cx(o.x), y = cyf(o.y);
+    ctx.save();
+    if(lit) halo(x, y, cs*0.5, col);
+    ctx.globalAlpha = lit ? .55 : .2; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(x, y, cs*0.24, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = lit ? lift(col,.5) : col;
+    ctx.lineWidth = Math.max(2, cs*0.075);
+    ctx.globalAlpha = lit ? 1 : .7;
+    ctx.beginPath(); ctx.arc(x, y, cs*0.3, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = lift(col,.7);
+    ctx.beginPath(); ctx.arc(x - cs*0.08, y - cs*0.08, cs*0.05, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawEdges(){
+  for(const w of S.walls) if(!w.dead) edgeBar(w.a, w.b, '#94a0c2', 1, false);
+  for(const b of S.barriers) if(!b.dead) edgeBar(b.a, b.b, PAL[b.c], .95, true);
+}
+
+function edgeBar(a, b, col, alpha, dashed){
+  const vertical = a[0] !== b[0];
+  const mx = ((a[0]+b[0])/2 + .5)*cs, my = ((a[1]+b[1])/2 + .5)*cs;
+  const half = cs*0.5;
+  ctx.save();
+  ctx.lineCap = 'round';
+  if(!dashed){
+    ctx.globalAlpha = .5; ctx.strokeStyle = '#05070f';
+    ctx.lineWidth = Math.max(5, cs*0.2);
+    ctx.beginPath();
+    if(vertical){ ctx.moveTo(mx, my-half); ctx.lineTo(mx, my+half); }
+    else        { ctx.moveTo(mx-half, my); ctx.lineTo(mx+half, my); }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = alpha; ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(3.5, cs*0.13);
+  if(dashed){
+    ctx.setLineDash([cs*0.13, cs*0.1]);
+    ctx.shadowColor = col; ctx.shadowBlur = cs*0.3;
+  }
+  ctx.beginPath();
+  if(vertical){ ctx.moveTo(mx, my-half); ctx.lineTo(mx, my+half); }
+  else        { ctx.moveTo(mx-half, my); ctx.lineTo(mx+half, my); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBlock(b){
+  let minx=1e9,miny=1e9,maxx=-1,maxy=-1;
+  for(const [dx,dy] of b.cells){
+    minx=Math.min(minx,b.x+dx); miny=Math.min(miny,b.y+dy);
+    maxx=Math.max(maxx,b.x+dx); maxy=Math.max(maxy,b.y+dy);
+  }
+  const X = minx*cs+3, Y = miny*cs+3, W = (maxx-minx+1)*cs-6, H = (maxy-miny+1)*cs-6;
+  ctx.save();
+  ctx.globalAlpha = .4; ctx.fillStyle = '#05070f';
+  rrect(X+2, Y+4, W, H, cs*0.16); ctx.fill();
+  ctx.globalAlpha = 1;
+  rrect(X, Y, W, H, cs*0.16); ctx.fillStyle = '#5a6790'; ctx.fill();
+  rrect(X+cs*0.06, Y+cs*0.06, W-cs*0.12, H*0.42, cs*0.12);
+  ctx.fillStyle = '#6f7da8'; ctx.fill();
+  rrect(X, Y, W, H, cs*0.16);
+  ctx.strokeStyle = '#8b98c2'; ctx.lineWidth = Math.max(1.6, cs*0.045); ctx.stroke();
+  ctx.fillStyle = '#9daacf';
+  for(const [dx,dy] of b.cells){
+    const gx = cx(b.x+dx), gy = cyf(b.y+dy);
+    for(let i=-1;i<=1;i++){
+      ctx.beginPath(); ctx.arc(gx + i*cs*0.16, gy, Math.max(1.3, cs*0.032), 0, 7); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ loop */
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(0.05, (now - last)/1000); last = now;
+  if(S){
+    const stage = document.getElementById('stage');
+    if(stage.clientWidth !== fitW || stage.clientHeight !== fitH) fit();
+    if(phase === 'play' && S.started){
+      S.elapsed += dt;
+      S.left = Math.max(0, S.time - S.elapsed);
+      if(S.left <= 0) fail('time');
+      for(const c of S.crystals)
+        if(c.unstable && !c.on && S.elapsed >= c.unstable) fail('boom');
+      if(phase === 'play' && S.crystals.every(c=>c.on)) win();
+    }
+    for(let i=flash.length-1;i>=0;i--){
+      flash[i].t -= dt*1.8;
+      if(flash[i].t <= 0) flash.splice(i,1);
+    }
+    const m = Math.floor(S.left/60), s = Math.floor(S.left%60);
+    elClock.textContent = m + ':' + String(s).padStart(2,'0');
+    const low = S.left < 15;
+    elClock.classList.toggle('low', low);
+    elBar.classList.toggle('low', low);
+    elBar.style.transform = 'scaleX(' + (S.left/S.time) + ')';
+    draw();
+  }
+  requestAnimationFrame(frame);
+}
+
+load(0);
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>
